@@ -1,0 +1,3 @@
+[submodule "private_scripts"]
+	path = private_scripts
+	url = https://github.com/rcdemuth/gas_scripts_private.git

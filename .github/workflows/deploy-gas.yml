@@ -22,7 +22,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 2 # Fetch previous commit for git diff
+          fetch-depth: 2 # Fetch the previous commit for git diff
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -32,7 +32,7 @@ jobs:
       - name: Install Clasp globally
         run: npm install -g @google/clasp
 
-      - name: Restore Clasp Authentication
+      - name: Restore Clasp Credentials
         env:
           CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
         run: |
@@ -40,26 +40,36 @@ jobs:
           echo "$CLASPRC_JSON" > ~/.clasprc.json
           chmod 600 ~/.clasprc.json
 
+      - name: Validate Clasp Credentials
+        run: |
+          echo "Testing Google Apps Script API authentication..."
+          # Running clasp list validates that the refresh token is currently accepted
+          if ! clasp list > /dev/null 2>&1; then
+            echo "::error title=Clasp Auth Expired::The OAuth credentials in CLASPRC_JSON have expired or been revoked by your Workspace admin. Run 'clasp login' locally and update the CLASPRC_JSON repository secret."
+            exit 1
+          fi
+          echo "✓ Authentication validated successfully."
+
       - name: Detect Changed Projects and Push
         run: |
           TARGET="${{ github.event.inputs.target_project }}"
 
-          # If manually triggered with a specific project name
+          # Mode 1: Manual dispatch targeting a specific project
           if [ -n "$TARGET" ]; then
             PROJECT_DIR="gas_scripts/$TARGET"
             if [ -d "$PROJECT_DIR" ] && [ -f "$PROJECT_DIR/.clasp.json" ]; then
-              echo "Manual trigger for targeted project: $PROJECT_DIR"
+              echo "Manual deployment triggered for: $PROJECT_DIR"
               cd "$PROJECT_DIR"
               clasp push --force
               exit 0
             else
-              echo "Error: Directory or .clasp.json not found for $PROJECT_DIR"
+              echo "::error title=Directory Not Found::Could not find directory or .clasp.json at $PROJECT_DIR"
               exit 1
             fi
           fi
 
-          # If triggered by a git push or manual run without a specific project
-          echo "Comparing HEAD~1 against HEAD..."
+          # Mode 2: Git diff push (automatic push or empty manual dispatch)
+          echo "Inspecting changes between HEAD~1 and HEAD..."
           CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD -- gas_scripts/)
 
           if [ -z "$CHANGED_FILES" ]; then
@@ -67,21 +77,21 @@ jobs:
             exit 0
           fi
 
-          # Extract unique project directory paths (gas_scripts/<project-name>)
+          # Extract unique project directory paths: gas_scripts/<project-name>
           PROJECT_DIRS=$(echo "$CHANGED_FILES" | awk -F/ '{print $1"/"$2}' | sort -u)
 
-          echo "Detected changes in the following projects:"
+          echo "Detected modifications in:"
           echo "$PROJECT_DIRS"
           echo "----------------------------------------"
 
           for DIR in $PROJECT_DIRS; do
             if [ -d "$DIR" ] && [ -f "$DIR/.clasp.json" ]; then
-              echo "Pushing project: $DIR"
+              echo "Pushing code for: $DIR"
               (
                 cd "$DIR"
                 clasp push --force
               )
-              echo "Successfully pushed $DIR"
+              echo "✓ Successfully pushed $DIR"
               echo "----------------------------------------"
             else
               echo "Skipping $DIR: directory or .clasp.json not found."

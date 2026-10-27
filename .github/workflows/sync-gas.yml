@@ -1,0 +1,54 @@
+name: Check & Pull New Apps Scripts
+
+on:
+  schedule:
+    # Runs at 06:00 UTC every weekday (adjust as needed)
+    - cron: '0 6 * * 1-5'
+  workflow_dispatch: # Allows manual run anytime from GitHub Actions tab
+
+jobs:
+  sync:
+    name: Sync Remote Projects
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Needed to commit new scripts back to the repository
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Clasp
+        run: npm install -g @google/clasp
+
+      - name: Restore Clasp Credentials
+        env:
+          CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+        run: |
+          mkdir -p ~/.clasprc
+          echo "$CLASPRC_JSON" > ~/.clasprc.json
+          chmod 600 ~/.clasprc.json
+
+      - name: Discover and Pull New Projects
+        run: node sync_remote.js
+
+      - name: Commit and Push Changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # Stage config changes and new script folders
+          git add scripts.config.yaml gas_scripts/
+          
+          # Only commit if there are staged differences
+          if ! git diff --staged --quiet; then
+            git commit -m "Auto-sync: add new Apps Script projects from Drive"
+            git push origin main
+            echo "New scripts committed and pushed to main."
+          else
+            echo "No changes to commit."
+          fi
