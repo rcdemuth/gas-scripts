@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 
-// Parse simple YAML without external packages
+// Parse simple YAML without external dependencies
 function parseSimpleYaml(content) {
   const lines = content.split(/\r?\n/);
   const scripts = [];
@@ -18,13 +18,16 @@ function parseSimpleYaml(content) {
       }
       currentScript = {
         name: line.replace('- name:', '').replace(/['"]/g, '').trim(),
-        enabled: true
+        enabled: true,
+        private: false
       };
     } else if (currentScript) {
       if (line.startsWith('id:')) {
         currentScript.id = line.replace('id:', '').replace(/['"]/g, '').trim();
       } else if (line.startsWith('enabled:')) {
         currentScript.enabled = line.replace('enabled:', '').trim() === 'true';
+      } else if (line.startsWith('private:')) {
+        currentScript.private = line.replace('private:', '').trim() === 'true';
       }
     }
   }
@@ -44,78 +47,85 @@ if (!fs.existsSync(CONFIG_FILE)) {
 
 const rawConfig = fs.readFileSync(CONFIG_FILE, 'utf8');
 const config = parseSimpleYaml(rawConfig);
-const baseDir = __dirname; // Current directory (gas_scripts)
+const rootDir = __dirname;
 
-const command = process.argv[2];
-const targetName = process.argv[3];
+// Directory locations
+const PUBLIC_DIR = path.join(rootDir, 'gas_scripts');
+const PRIVATE_DIR = path.join(rootDir, 'private_scripts');
 
-if (!['pull', 'push', 'status'].includes(command)) {
+// Ensure base directories exist
+if (!fs.existsSync(PUBLIC_DIR)) fs.mkdirSync(PUBLIC_DIR, { recursive: true });
+if (!fs.existsSync(PRIVATE_DIR)) fs.mkdirSync(PRIVATE_DIR, { recursive: true });
+
+// Resolve the correct folder for a given script
+function resolveProjectDir(script) {
+  const privatePath = path.join(PRIVATE_DIR, script.name);
+  const publicPath = path.join(PUBLIC_DIR, script.name);
+
+  // 1. If it already exists in either location, use that location
+  if (fs.existsSync(privatePath)) return privatePath;
+  if (fs.existsSync(publicPath)) return publicPath;
+
+  // 2. If it's brand new, place it based on the 'private' flag in yaml
+  return script.private ? privatePath : publicPath;
+}
+
+// Arguments handling (order-independent)
+const rawArgs = process.argv.slice(2);
+const command = rawArgs.find(arg => ['pull', 'push', 'status'].includes(arg));
+const onlyMissing = rawArgs.includes('--missing');
+const targetName = rawArgs.find(arg => !['pull', 'push', 'status', '--missing'].includes(arg));
+
+if (!command) {
   console.log(`
 Usage:
-  node runner.js <command> [project-name]
+  node runner.js <command> [project-name] [--missing]
 
 Commands:
-  pull    Pull code from Google Apps Script into folders
-  push    Push local code to Google Apps Script
-  status  Check local folder and clasp setup status
+  pull       Pull code from Google Apps Script into folders
+  push       Push local code to Google Apps Script
+  status     Show local files and location (public vs private)
+
+Options:
+  --missing  Only run on scripts that don't already have local files (pull only)
 
 Examples:
-  node runner.js pull
-  node runner.js pull Time-Sheets
+  node runner.js status
+  node runner.js pull --missing
   node runner.js push REMaps
+  node runner.js pull Bridge_Descriptions
   `);
   process.exit(0);
 }
 
-const filteredScripts = targetName
+// Filter scripts based on command line arguments
+let filteredScripts = targetName
   ? config.scripts.filter(s => s.name.toLowerCase() === targetName.toLowerCase())
   : config.scripts.filter(s => s.enabled !== false);
 
-if (filteredScripts.length === 0) {
-  console.error(`No matching script found for: "${targetName}"`);
-  process.exit(1);
+if (onlyMissing && command === 'pull') {
+  filteredScripts = filteredScripts.filter(script => {
+    const projectDir = resolveProjectDir(script);
+    return !fs.existsSync(projectDir) || fs.readdirSync(projectDir).filter(f => f !== '.clasp.json').length === 0;
+  });
 }
 
-console.log(`Executing '${command}' on ${filteredScripts.length} script(s)...\n`);
+if (filteredScripts.length === 0) {
+  console.log(onlyMissing ? 'No missing script folders found to pull.' : `No matching script found for: "${targetName}"`);
+  process.exit(0);
+}
+
+console.log(`Executing '${command}' across ${filteredScripts.length} script(s)...\n`);
 
 let successCount = 0;
 let failureCount = 0;
 
 filteredScripts.forEach((script, idx) => {
-  const projectDir = path.join(baseDir, script.name);
-  console.log(`[${idx + 1}/${filteredScripts.length}] ${script.name} (${script.id})`);
+  const projectDir = resolveProjectDir(script);
+  const isPrivate = projectDir.startsWith(PRIVATE_DIR);
+  const scopeTag = isPrivate ? '[PRIVATE]' : '[PUBLIC]';
+
+  console.log(`[${idx + 1}/${filteredScripts.length}] ${scopeTag} ${script.name} (${script.id})`);
 
   if (!fs.existsSync(projectDir)) {
     fs.mkdirSync(projectDir, { recursive: true });
-  }
-
-  const claspConfigPath = path.join(projectDir, '.clasp.json');
-  const claspConfig = {
-    scriptId: script.id,
-    rootDir: projectDir
-  };
-  fs.writeFileSync(claspConfigPath, JSON.stringify(claspConfig, null, 2), 'utf8');
-
-  if (command === 'status') {
-    const files = fs.readdirSync(projectDir).filter(f => f !== '.clasp.json');
-    console.log(`  Local files: ${files.length ? files.join(', ') : '(empty)'}\n`);
-    successCount++;
-    return;
-  }
-
-  try {
-    execSync('npx @google/clasp ' + command, {
-      cwd: projectDir,
-      stdio: 'inherit'
-    });
-    console.log(`✓ ${command} succeeded for ${script.name}\n`);
-    successCount++;
-  } catch (err) {
-    console.error(`✗ ${command} failed for ${script.name}: ${err.message}\n`);
-    failureCount++;
-  }
-});
-
-console.log(`========================================`);
-console.log(`Finished: ${successCount} succeeded, ${failureCount} failed.`);
-console.log(`========================================`);

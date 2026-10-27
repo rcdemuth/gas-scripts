@@ -22,6 +22,13 @@ jobs:
         with:
           node-version: 20
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          # If your repo has a package.json at root:
+          cache: 'npm'
+
       - name: Install Clasp
         run: npm install -g @google/clasp
 

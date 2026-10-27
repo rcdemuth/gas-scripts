@@ -6,10 +6,11 @@ on:
       - main
     paths:
       - 'gas_scripts/**'
+      - 'private_scripts/**'
   workflow_dispatch:
     inputs:
       target_project:
-        description: 'Specific project to push (leave empty to push all modified)'
+        description: 'Specific project to push (leave blank to push all modified)'
         required: false
         default: ''
 
@@ -19,15 +20,19 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout repository and submodules
         uses: actions/checkout@v4
         with:
-          fetch-depth: 2 # Fetch the previous commit for git diff
+          fetch-depth: 2
+          submodules: recursive
+          # Required for GitHub Actions to clone your private gas_scripts_private submodule
+          token: ${{ secrets.GH_PAT_FOR_SUBMODULES || github.token }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: 'npm'
 
       - name: Install Clasp globally
         run: npm install -g @google/clasp
@@ -43,9 +48,8 @@ jobs:
       - name: Validate Clasp Credentials
         run: |
           echo "Testing Google Apps Script API authentication..."
-          # Running clasp list validates that the refresh token is currently accepted
           if ! clasp list > /dev/null 2>&1; then
-            echo "::error title=Clasp Auth Expired::The OAuth credentials in CLASPRC_JSON have expired or been revoked by your Workspace admin. Run 'clasp login' locally and update the CLASPRC_JSON repository secret."
+            echo "::error title=Clasp Auth Expired::The OAuth credentials in CLASPRC_JSON have expired or been revoked. Run 'clasp login' locally and update the CLASPRC_JSON repository secret."
             exit 1
           fi
           echo "✓ Authentication validated successfully."
@@ -54,46 +58,45 @@ jobs:
         run: |
           TARGET="${{ github.event.inputs.target_project }}"
 
-          # Mode 1: Manual dispatch targeting a specific project
+          # Mode 1: Manual dispatch for a targeted project name
           if [ -n "$TARGET" ]; then
-            PROJECT_DIR="gas_scripts/$TARGET"
-            if [ -d "$PROJECT_DIR" ] && [ -f "$PROJECT_DIR/.clasp.json" ]; then
-              echo "Manual deployment triggered for: $PROJECT_DIR"
-              cd "$PROJECT_DIR"
-              clasp push --force
+            echo "Manual deployment requested for: $TARGET"
+            
+            PROJECT_DIR=""
+            if [ -d "gas_scripts/$TARGET" ]; then
+              PROJECT_DIR="gas_scripts/$TARGET"
+            elif [ -d "private_scripts/$TARGET" ]; then
+              PROJECT_DIR="private_scripts/$TARGET"
+            fi
+
+            if [ -n "$PROJECT_DIR" ] && [ -f "$PROJECT_DIR/.clasp.json" ]; then
+              echo "Pushing code for: $PROJECT_DIR"
+              (
+                cd "$PROJECT_DIR"
+                clasp push --force
+              )
+              echo "✓ Successfully pushed $PROJECT_DIR"
               exit 0
             else
-              echo "::error title=Directory Not Found::Could not find directory or .clasp.json at $PROJECT_DIR"
+              echo "::error title=Project Not Found::Could not find '$TARGET' with a valid .clasp.json in gas_scripts/ or private_scripts/."
               exit 1
             fi
           fi
 
           # Mode 2: Git diff push (automatic push or empty manual dispatch)
-          echo "Inspecting changes between HEAD~1 and HEAD..."
-          CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD -- gas_scripts/)
+          echo "Inspecting changes between HEAD~1 and HEAD across public and private folders..."
+          CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD -- gas_scripts/ private_scripts/)
 
-          if [ -z "$CHANGED_FILES" ]; then
-            echo "No changes detected inside gas_scripts/."
-            exit 0
-          fi
-
-          # Extract unique project directory paths: gas_scripts/<project-name>
-          PROJECT_DIRS=$(echo "$CHANGED_FILES" | awk -F/ '{print $1"/"$2}' | sort -u)
-
-          echo "Detected modifications in:"
-          echo "$PROJECT_DIRS"
-          echo "----------------------------------------"
-
-          for DIR in $PROJECT_DIRS; do
-            if [ -d "$DIR" ] && [ -f "$DIR/.clasp.json" ]; then
-              echo "Pushing code for: $DIR"
+          # If the submodule reference itself changed, also check the submodule's internal commits
+          if [ -d "private_scripts" ]; then
+            SUBMODULE_CHANGED=$(git diff --name-only HEAD~1 HEAD -- private_scripts)
+            if [ -n "$SUBMODULE_CHANGED" ]; then
+              echo "Submodule pointer changed; inspecting internal private_scripts commit diff..."
               (
-                cd "$DIR"
-                clasp push --force
+                cd private_scripts
+                # If there is history, inspect modified files within the submodule
+                if git rev-parse HEAD~1 >/dev/null 2>&1; then
+                  SUB_FILES=$(git diff --name-only HEAD~1 HEAD | awk -F/ '{print "private_scripts/"$1}')
+                  CHANGED_FILES=$(printf "%s\n%s" "$CHANGED_FILES" "$SUB_FILES")
+                fi
               )
-              echo "✓ Successfully pushed $DIR"
-              echo "----------------------------------------"
-            else
-              echo "Skipping $DIR: directory or .clasp.json not found."
-            fi
-          done
