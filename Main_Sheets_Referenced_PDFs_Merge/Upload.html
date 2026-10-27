@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <style>
+      body { font-family: Arial, sans-serif; padding: 10px; }
+      button { padding: 8px 15px; background-color: #1a73e8; color: white; border: none; border-radius: 4px; cursor: pointer; }
+      button:hover { background-color: #1557b0; }
+      #status { margin-top: 15px; font-weight: bold; color: #555; }
+    </style>
+    <script>
+      function uploadFile() {
+        var fileInput = document.getElementById('file-input');
+        var file = fileInput.files[0];
+        
+        if (!file) {
+          alert("Please select a file first.");
+          return;
+        }
+
+        var reader = new FileReader();
+        reader.onload = function(e) {
+          // Extract the base64 data from the Data URL
+          var dataUrl = e.target.result;
+          var base64Data = dataUrl.split(',')[1];
+
+          document.getElementById('status').innerHTML = "Uploading... please wait.";
+          document.getElementById('upload-btn').disabled = true;
+
+          // Send the file to the Apps Script function
+          google.script.run
+            .withSuccessHandler(function(result) {
+              document.getElementById('status').innerHTML = result;
+              setTimeout(function() { google.script.host.close(); }, 2000); // Close popup after 2 seconds
+            })
+            .saveFileAndInsertChip(base64Data, file.name, file.type);
+        };
+        
+        // Read the file as a base64 string
+        reader.readAsDataURL(file);
+      }
+    </script>
+  </head>
+  <body>
+    <input type="file" id="file-input" />
+    <br><br>
+    <button id="upload-btn" onclick="uploadFile()">Upload & Insert</button>
+    <div id="status"></div>
+  </body>
+</html>

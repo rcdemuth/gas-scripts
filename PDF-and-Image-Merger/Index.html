@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <style>
+    body { font-family: Arial, sans-serif; margin: 30px; background: #f9f9f9; color: #333; }
+    .container { max-width: 600px; background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+    h2 { margin-top: 0; }
+    input[type="file"] { margin: 15px 0; }
+    button { background: #1a73e8; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; }
+    button:hover { background: #1557b0; }
+    #status { margin-top: 15px; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>PDF and Image Merger</h2>
+    <p>Select multiple PDF or image files to combine:</p>
+    <input type="file" id="fileInput" multiple accept="image/*,application/pdf"><br>
+    <button onclick="handleUpload()">Merge Files</button>
+    <div id="status"></div>
+  </div>
+
+  <script>
+    function handleUpload() {
+      const fileInput = document.getElementById('fileInput');
+      const status = document.getElementById('status');
+      if (fileInput.files.length === 0) {
+        alert('Please choose at least one file.');
+        return;
+      }
+      
+      status.innerText = 'Reading files...';
+      let filesProcessed = 0;
+      const fileDataArray = [];
+
+      for (let i = 0; i < fileInput.files.length; i++) {
+        const file = fileInput.files[i];
+        const reader = new FileReader();
+        
+        reader.onload = function(e) {
+          const base64Content = e.target.result.split(',')[1];
+          fileDataArray.push({
+            name: file.name,
+            mimeType: file.type,
+            base64: base64Content
+          });
+          
+          filesProcessed++;
+          if (filesProcessed === fileInput.files.length) {
+            status.innerText = 'Sending to Google Apps Script...';
+            google.script.run
+              .withSuccessHandler(onSuccess)
+              .withFailureHandler(onFailure)
+              .processAndMergeFiles(fileDataArray);
+          }
+        };
+        reader.readAsDataURL(file);
+      }
+    }
+
+    function onSuccess(res) {
+      document.getElementById('status').innerText = res.message;
+    }
+
+    function onFailure(err) {
+      document.getElementById('status').innerText = 'Error: ' + err.message;
+    }
+  </script>
+</body>
+</html>

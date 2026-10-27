@@ -1,0 +1,982 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css">
+    <style>
+      :root { color-scheme: light; font-family: Arial, sans-serif; }
+      body { margin: 0; background: #f4f6f8; color: #1f2933; }
+      main { box-sizing: border-box; max-width: 760px; margin: 32px auto; padding: 28px; background: #fff; border: 1px solid #d9e1e8; border-radius: 10px; }
+      h1 { margin: 0 0 8px; color: #163b5c; font-size: 26px; }
+      p { line-height: 1.5; }
+      label { display: block; margin: 18px 0 6px; font-weight: 700; }
+      input, select { box-sizing: border-box; width: 100%; padding: 10px; border: 1px solid #9aa9b5; border-radius: 4px; background: #fff; font: inherit; }
+      input:focus, select:focus { outline: 2px solid #2d6f9f; outline-offset: 1px; }
+      input[type="radio"] { width: auto; margin-right: 8px; }
+      .source-choice { display: flex; gap: 22px; margin-top: 12px; }
+      .source-choice label { margin: 0; font-weight: 400; }
+      #map { width: 100%; height: 460px; margin-top: 12px; border: 1px solid #9aa9b5; border-radius: 4px; }
+      .map-hint { margin: 6px 0; color: #52616b; font-size: 13px; }
+      .hidden { display: none; }
+      .hint { margin: 5px 0 0; color: #52616b; font-size: 13px; }
+      button { margin-top: 24px; padding: 11px 20px; border: 0; border-radius: 4px; background: #155d86; color: #fff; font: inherit; font-weight: 700; cursor: pointer; }
+      button:disabled { background: #788994; cursor: wait; }
+      #status { margin-top: 20px; padding: 12px; border-radius: 4px; background: #eef3f6; white-space: pre-wrap; }
+      #status.error { background: #fff0ef; color: #8d1a12; }
+      #status.success { background: #edf8f0; color: #185c2e; }
+      #outputs a { display: inline-block; margin: 6px 16px 0 0; color: #155d86; }
+      .required { color: #9c2219; }
+    </style>
+  </head>
+  <body>
+    <main id="form-page">
+      <h1>ECZ GeoJSON Converter</h1>
+      <p>Draw a project boundary on the map or upload a KML/KMZ file. The app prepares the ECZ geometry and saves the submitted information and result to a Google Sheet. Linear project centerlines are buffered by the selected distance. No screening or analysis is performed.</p>
+      <form id="conversion-form">
+        <label for="email">Email <span class="required">*</span></label>
+        <select id="email" name="email" required>
+          <option value="">Select your email address</option>
+          <? if (typeof authorizedEmails !== "undefined" && Array.isArray(authorizedEmails)) { ?>
+            <? for (var i = 0; i < authorizedEmails.length; i++) { ?>
+              <option value="<?= authorizedEmails[i] ?>"><?= authorizedEmails[i] ?></option>
+            <? } ?>
+          <? } ?>
+        </select>
+
+        <label for="project-name">Project name <span class="required">*</span></label>
+        <input id="project-name" name="projectName" type="text" maxlength="200" required>
+
+        <label for="project-type">Project type <span class="required">*</span></label>
+        <select id="project-type" name="projectType" required>
+          <option value="">Choose a project type</option>
+          <option value="Bridge">Bridge</option>
+          <option value="Short span">Short span</option>
+          <option value="Linear">Linear</option>
+          <option value="Other">Other</option>
+        </select>
+        <label for="state-number">State number <span class="required">*</span></label>
+        <input id="state-number" name="stateNumber" type="text" maxlength="80" required>
+
+        <label for="federal-number">Federal number</label>
+        <input id="federal-number" name="federalNumber" type="text" maxlength="80">
+
+        <label>Project boundary <span class="required">*</span></label>
+        <div class="source-choice">
+          <label><input type="radio" name="boundary-source" value="draw" checked> Draw on map</label>
+          <label id="points-choice" class="hidden"><input type="radio" name="boundary-source" value="points"> Drop points &amp; route</label>
+          <label id="route-choice" class="hidden"><input type="radio" name="boundary-source" value="route"> Route ID builder</label>
+          <label><input type="radio" name="boundary-source" value="upload"> Upload KML/KMZ</label>
+        </div>
+        <div id="buffer-distance-group" class="hidden">
+          <label for="buffer-distance">Linear project buffer distance (meters) <span class="required">*</span></label>
+          <input id="buffer-distance" name="bufferDistanceMeters" type="number" min="5.01" max="100000" step="any" value="15">
+          <p class="hint">The centerline will be buffered by this distance on each side. Must be greater than 5 meters (defaults to 15).</p>
+        </div>
+        <div id="draw-panel">
+          <p id="map-hint" class="map-hint">Draw a polygon for this project type.</p>
+          <div id="points-bar" class="hidden" style="margin: 10px 0; padding: 10px 14px; background: #eef3f6; border: 1px solid #c4d1db; border-radius: 4px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+            <div id="points-status" style="font-size: 13px; color: #163b5c; font-weight: 600;">Click on the map to set Start point (Point 1).</div>
+            <button id="clear-points-btn" type="button" style="margin: 0; padding: 6px 14px; font-size: 13px; background: #788994;">Clear points</button>
+          </div>
+          <div id="map" aria-label="Project boundary drawing map"></div>
+        </div>
+        <div id="route-panel" class="hidden">
+          <p class="hint">Build a WVDOT Route ID using the dropdowns below. Each selection filters the next field to show only valid options. The route segment between the mile points is buffered using the distance above.</p>
+          <label for="route-county">County</label>
+          <select id="route-county">
+            <option value="">Select County</option>
+            <option value="01">01 - Barbour</option>
+            <option value="02">02 - Berkeley</option>
+            <option value="03">03 - Boone</option>
+            <option value="04">04 - Braxton</option>
+            <option value="05">05 - Brooke</option>
+            <option value="06">06 - Cabell</option>
+            <option value="07">07 - Calhoun</option>
+            <option value="08">08 - Clay</option>
+            <option value="09">09 - Doddridge</option>
+            <option value="10">10 - Fayette</option>
+            <option value="11">11 - Gilmer</option>
+            <option value="12">12 - Grant</option>
+            <option value="13">13 - Greenbrier</option>
+            <option value="14">14 - Hampshire</option>
+            <option value="15">15 - Hancock</option>
+            <option value="16">16 - Hardy</option>
+            <option value="17">17 - Harrison</option>
+            <option value="18">18 - Jackson</option>
+            <option value="19">19 - Jefferson</option>
+            <option value="20">20 - Kanawha</option>
+            <option value="21">21 - Lewis</option>
+            <option value="22">22 - Lincoln</option>
+            <option value="23">23 - Logan</option>
+            <option value="24">24 - McDowell</option>
+            <option value="25">25 - Marion</option>
+            <option value="26">26 - Marshall</option>
+            <option value="27">27 - Mason</option>
+            <option value="28">28 - Mercer</option>
+            <option value="29">29 - Mineral</option>
+            <option value="30">30 - Mingo</option>
+            <option value="31">31 - Monongalia</option>
+            <option value="32">32 - Monroe</option>
+            <option value="33">33 - Morgan</option>
+            <option value="34">34 - Nicholas</option>
+            <option value="35">35 - Ohio</option>
+            <option value="36">36 - Pendleton</option>
+            <option value="37">37 - Pleasants</option>
+            <option value="38">38 - Pocahontas</option>
+            <option value="39">39 - Preston</option>
+            <option value="40">40 - Putnam</option>
+            <option value="41">41 - Raleigh</option>
+            <option value="42">42 - Randolph</option>
+            <option value="43">43 - Ritchie</option>
+            <option value="44">44 - Roane</option>
+            <option value="45">45 - Summers</option>
+            <option value="46">46 - Taylor</option>
+            <option value="47">47 - Tucker</option>
+            <option value="48">48 - Tyler</option>
+            <option value="49">49 - Upshur</option>
+            <option value="50">50 - Wayne</option>
+            <option value="51">51 - Webster</option>
+            <option value="52">52 - Wetzel</option>
+            <option value="53">53 - Wirt</option>
+            <option value="54">54 - Wood</option>
+            <option value="55">55 - Wyoming</option>
+            <option value="99">99 - Reserved</option>
+          </select>
+          <label for="route-signsystem">Sign System</label>
+          <select id="route-signsystem" disabled><option value="">—</option></select>
+          <label for="route-number">Route Number</label>
+          <select id="route-number" disabled><option value="">—</option></select>
+          <label for="route-subroute">Subroute</label>
+          <select id="route-subroute" disabled><option value="">—</option></select>
+          <label for="route-suppcode">Supplemental Code</label>
+          <select id="route-suppcode" disabled><option value="">—</option></select>
+          <label for="route-direction">Direction</label>
+          <select id="route-direction" disabled><option value="">—</option></select>
+          <label for="route-exitnumber">Exit Number</label>
+          <select id="route-exitnumber" disabled><option value="">—</option></select>
+          <label for="route-rampletter">Ramp Letter</label>
+          <select id="route-rampletter" disabled><option value="">—</option></select>
+          <div id="route-id-display" class="hidden" style="margin-top:14px;padding:10px 14px;background:#edf8f0;border:1px solid #9aa9b5;border-radius:4px;">
+            <strong>Route ID:</strong> <span id="route-id-value" style="font-family:monospace;font-size:16px;letter-spacing:1px;"></span>
+          </div>
+          <label for="route-begin">Beginning mile point</label>
+          <input id="route-begin" type="number" min="0" step="any">
+          <label for="route-end">Ending mile point</label>
+          <input id="route-end" type="number" min="0" step="any">
+        </div>
+        <div id="upload-panel" class="hidden">
+          <input id="boundary-file" name="boundaryFile" type="file" accept=".kml,.kmz,application/vnd.google-earth.kml+xml,application/vnd.google-earth.kmz">
+          <p class="hint">KML or KMZ only; maximum upload size is 10 MiB.</p>
+        </div>
+
+        <button id="submit-button" type="submit">Review and confirm</button>
+      </form>
+      <div id="status" role="status" aria-live="polite">Ready.</div>
+      <div id="outputs"></div>
+    </main>
+
+    <main id="confirm-page" class="hidden">
+      <h1>Confirm ECZ Submission</h1>
+      <p>Please review your project details and the repaired ECZ boundary on the map before finalizing your submission.</p>
+
+      <div id="confirm-map" style="width: 100%; height: 380px; margin: 16px 0; border: 1px solid #9aa9b5; border-radius: 4px;" aria-label="ECZ preview map"></div>
+      <div style="background: #f8fafc; border: 1px solid #d9e1e8; border-radius: 6px; padding: 16px 20px; margin: 18px 0;">
+        <h3 style="margin: 0 0 12px; color: #163b5c; font-size: 17px;">Project Summary</h3>
+        <table style="width: 100%; border-collapse: collapse; font-size: 14px; line-height: 1.8;">
+          <tr><td style="width: 160px; font-weight: 700; color: #52616b;">Email:</td><td id="confirm-summary-email">—</td></tr>
+          <tr><td style="font-weight: 700; color: #52616b;">Project Name:</td><td id="confirm-summary-name">—</td></tr>
+          <tr><td style="font-weight: 700; color: #52616b;">Project Type:</td><td id="confirm-summary-type">—</td></tr>
+          <tr><td style="font-weight: 700; color: #52616b;">State / Federal #:</td><td id="confirm-summary-numbers">—</td></tr>
+          <tr><td style="font-weight: 700; color: #52616b;">Boundary Source:</td><td id="confirm-summary-source">—</td></tr>
+          <tr id="confirm-buffer-row"><td style="font-weight: 700; color: #52616b;">Buffer Distance:</td><td id="confirm-summary-buffer">—</td></tr>
+          <tr><td style="font-weight: 700; color: #52616b; vertical-align: top;">ECZ Preparation:</td><td id="confirm-summary-processing" style="color: #185c2e;">—</td></tr>
+        </table>
+      </div>  
+      <!-- <div style="background: #f8fafc; border: 1px solid #d9e1e8; border-radius: 6px; padding: 16px 20px; margin: 18px 0;">
+        <h3 style="margin: 0 0 12px; color: #163b5c; font-size: 17px;">Project Summary</h3>
+        <table style="width: 100%; border-collapse: collapse; font-size: 14px; line-height: 1.8;">
+          <tr><td style="width: 160px; font-weight: 700; color: #52616b;">Email:</td><td id="confirm-summary-email">—</td></tr>
+          <tr><td style="font-weight: 700; color: #52616b;">Project Name:</td><td id="confirm-summary-name">—</td></tr>
+          <tr><td style="font-weight: 700; color: #52616b;">Project Type:</td><td id="confirm-summary-type">—</td></tr>
+          <tr><td style="font-weight: 700; color: #52616b;">State / Federal #:</td><td id="confirm-summary-numbers">—</td></tr>
+          <tr><td style="font-weight: 700; color: #52616b;">Boundary Source:</td><td id="confirm-summary-source">—</td></tr>
+          <tr><td style="font-weight: 700; color: #52616b; vertical-align: top;">ECZ Preparation:</td><td id="confirm-summary-processing" style="color: #185c2e;">—</td></tr>
+        </table>
+      </div> -->
+
+      <div style="display: flex; gap: 14px; margin-top: 24px; flex-wrap: wrap;">
+        <button id="confirm-submit-btn" type="button" style="background: #185c2e; margin-top: 0; padding: 12px 24px;">Confirm and Save</button>
+        <button id="confirm-back-btn" type="button" style="background: #52616b; margin-top: 0; padding: 12px 20px;">← Edit Details</button>
+      </div>
+      <div id="confirm-status" style="margin-top: 16px;"></div>
+    </main>
+
+    <main id="success-page" class="hidden" style="text-align: center; padding: 40px 28px;">
+      <div style="width: 52px; height: 52px; margin: 0 auto 16px; background: #edf8f0; border: 2px solid #2e8540; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 26px; color: #2e8540;">✓</div>
+      <h1 style="color: #163b5c; margin-bottom: 16px;">Submission Received</h1>
+      <p style="font-size: 16px; line-height: 1.6; max-width: 580px; margin: 0 auto 20px;">ECZ successfully submitted, your screening map and report will be available shortly, you should recieve a notification in your inbox</p>
+
+      <div style="margin: 28px 0; padding: 20px; background: #f0f7fb; border: 1px solid #cce3f0; border-radius: 6px;">
+        <p style="font-size: 15px; font-weight: 700; margin: 0 0 14px; color: #163b5c;">Download repaired KML and/or KMZ files of the ECZ here:</p>
+        <div style="display: flex; gap: 16px; justify-content: center; flex-wrap: wrap;">
+          <a id="download-kml-link" download="Repaired_ECZ.kml" href="#" style="display: inline-block; padding: 10px 22px; background: #155d86; color: #fff; text-decoration: none; border-radius: 4px; font-weight: 700;">Download KML</a>
+          <a id="download-kmz-link" download="Repaired_ECZ.kmz" href="#" style="display: inline-block; padding: 10px 22px; background: #155d86; color: #fff; text-decoration: none; border-radius: 4px; font-weight: 700;">Download KMZ</a>
+        </div>
+      </div>
+
+      <p style="font-size: 15px; margin-top: 24px;">To submit another ECZ please <a id="submit-another-link" href="#" target="_top" style="color: #155d86; font-weight: 700; text-decoration: underline;">click here</a></p>
+    </main>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
+    <script>
+      var MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+      var form = document.getElementById("conversion-form");
+      var button = document.getElementById("submit-button");
+      var statusBox = document.getElementById("status");
+      var outputs = document.getElementById("outputs");
+      var drawnItems = new L.FeatureGroup();
+      var map = L.map("map").setView([38.6, -80.6], 7);
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom: 19,
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+      }).addTo(map);
+      drawnItems.addTo(map);
+      var drawControl = null;
+
+      /* ── Lookup tables (matching the WVDOH Route ID Builder) ── */
+      var SIGN_SYSTEMS = {
+        "1":"Interstate","2":"US","3":"WV","4":"CO","5":"N/A",
+        "6":"State Park / Forest Rd","7":"FANS","8":"HARP",
+        "9":"OTHER","0":"MNS","U":"USFR","R":"Railroad"
+      };
+      var SUPPLEMENTAL_CODES = {
+        "00":"N/A","01":"Alternate","02":"Wye","03":"Spur",
+        "04":"North","05":"South","06":"East","07":"West",
+        "08":"Business","09":"NB (Business)","10":"SB (Business)",
+        "11":"EB (Business)","12":"WB (Business)","13":"Truck Route",
+        "14":"Bypass","15":"Loop","16":"Toll","17":"Ramp",
+        "18":"Other","19":"City Streets Non-State",
+        "20":"Roads Under Construction","21":"Footbridges",
+        "22":"Historical Bridges","23":"Connector",
+        "24":"New/Proposed","25":"Crossover (dual geom)",
+        "26":"Emergency Crossover","27":"Left Turn Lane",
+        "28":"Right Turn Lane","99":"Abandoned"
+      };
+
+      /* ── Route builder state ── */
+      var routeBuilderFields = [
+        "route-county","route-signsystem","route-number","route-subroute",
+        "route-suppcode","route-direction","route-exitnumber","route-rampletter"
+      ];
+      var builtRouteId = "";
+
+      function padRouteID(size, text) { return text.padEnd(size, "0"); }
+
+      function resetRouteDropdowns(startIndex) {
+        for (var i = startIndex; i < routeBuilderFields.length; i++) {
+          var el = document.getElementById(routeBuilderFields[i]);
+          if (el.tagName === "SELECT") {
+            el.innerHTML = '<option value="">—</option>';
+            el.disabled = true;
+          }
+        }
+      }
+
+      function updateRouteIdDisplay() {
+        var display = document.getElementById("route-id-display");
+        var span = document.getElementById("route-id-value");
+        if (builtRouteId) {
+          span.textContent = padRouteID(13, builtRouteId);
+          display.classList.remove("hidden");
+        } else {
+          display.classList.add("hidden");
+        }
+      }
+
+      function formatLabel(code, lookup) {
+        var label = lookup[code];
+        return label ? code + " - " + label : code;
+      }
+
+      function populateDropdown(selectId, items, valueKey, labelFn) {
+        var el = document.getElementById(selectId);
+        el.innerHTML = '<option value="">Select…</option>';
+        var hasItems = false;
+        items.forEach(function(item) {
+          var val = item[valueKey];
+          if (val === null || val === undefined) return;
+          hasItems = true;
+          var opt = document.createElement("option");
+          // The submitted value remains exactly what it is (e.g., "00")
+          opt.value = val;
+          // Mask ONLY if the entry is strictly "00"
+          if (String(val) === "00") {
+            opt.textContent = "00 - N/A";
+          } else {
+            // Pass through all other entries normally
+            opt.textContent = labelFn ? labelFn(val) : val;
+          }
+          el.appendChild(opt);
+        });
+        el.disabled = !hasItems;
+            }
+      function OLDpopulateDropdown(selectId, items, valueKey, labelFn) {
+        var el = document.getElementById(selectId);
+        el.innerHTML = '<option value="">Select…</option>';
+        var hasItems = false;
+        items.forEach(function(item) {
+          var val = item[valueKey];
+          if (val === null || val === undefined) return;
+          hasItems = true;
+          var opt = document.createElement("option");
+          opt.value = val;
+          opt.textContent = labelFn ? labelFn(val) : val;
+          el.appendChild(opt);
+        });
+        el.disabled = !hasItems;
+      }
+
+      var dropdownCache = {};
+      function fetchRouteOptions(pathSegments, selectId, valueKey, labelFn, callback) {
+        var cacheKey = pathSegments.join("/");
+        if (dropdownCache[cacheKey]) {
+          populateDropdown(selectId, dropdownCache[cacheKey], valueKey, labelFn);
+          if (callback) callback(dropdownCache[cacheKey]);
+          return;
+        }
+        var el = document.getElementById(selectId);
+        el.innerHTML = '<option value="">Loading…</option>';
+        el.disabled = true;
+        google.script.run
+          .withSuccessHandler(function(items) {
+            dropdownCache[cacheKey] = items;
+            populateDropdown(selectId, items, valueKey, labelFn);
+            if (callback) callback(items);
+          })
+          .withFailureHandler(function(err) {
+            el.innerHTML = '<option value="">Error loading</option>';
+            el.disabled = true;
+          })
+          .fetchWvdohMeasures(cacheKey);
+      }
+
+      /* ── County change → fetch sign systems ── */
+      document.getElementById("route-county").addEventListener("change", function() {
+        var county = this.value;
+        resetRouteDropdowns(1);
+        if (!county) { builtRouteId = ""; updateRouteIdDisplay(); return; }
+        builtRouteId = county;
+        updateRouteIdDisplay();
+        fetchRouteOptions([county], "route-signsystem", "CO_SignSystem",
+          function(v) { return formatLabel(v, SIGN_SYSTEMS); });
+      });
+
+      /* ── Sign system change → fetch route numbers ── */
+      document.getElementById("route-signsystem").addEventListener("change", function() {
+        var county = document.getElementById("route-county").value;
+        var signSys = this.value;
+        resetRouteDropdowns(2);
+        if (!signSys) return;
+        builtRouteId = county + signSys;
+        updateRouteIdDisplay();
+        fetchRouteOptions([county, signSys], "route-number", "CO_RouteNumber");
+      });
+
+      /* ── Route number change → fetch subroutes ── */
+      document.getElementById("route-number").addEventListener("change", function() {
+        var county = document.getElementById("route-county").value;
+        var signSys = document.getElementById("route-signsystem").value;
+        var routeNo = this.value;
+        resetRouteDropdowns(3);
+        if (!routeNo) return;
+        builtRouteId = county + signSys + routeNo;
+        updateRouteIdDisplay();
+        fetchRouteOptions([county, signSys, routeNo], "route-subroute", "CO_SubRoute");
+      });
+
+      /* ── Subroute change → fetch supplemental codes ── */
+      document.getElementById("route-subroute").addEventListener("change", function() {
+        var county = document.getElementById("route-county").value;
+        var signSys = document.getElementById("route-signsystem").value;
+        var routeNo = document.getElementById("route-number").value;
+        var subroute = this.value;
+        resetRouteDropdowns(4);
+        if (!subroute) return;
+        builtRouteId = county + signSys + routeNo + subroute;
+        updateRouteIdDisplay();
+        fetchRouteOptions([county, signSys, routeNo, subroute], "route-suppcode", "CO_SuppCode",
+          function(v) { return formatLabel(v, SUPPLEMENTAL_CODES); });
+      });
+
+      /* ── Supplemental code change → fetch directions ── */
+      document.getElementById("route-suppcode").addEventListener("change", function() {
+        var county = document.getElementById("route-county").value;
+        var signSys = document.getElementById("route-signsystem").value;
+        var routeNo = document.getElementById("route-number").value;
+        var subroute = document.getElementById("route-subroute").value;
+        var suppCode = this.value;
+        resetRouteDropdowns(5);
+        if (!suppCode) return;
+        builtRouteId = county + signSys + routeNo + subroute + suppCode;
+        updateRouteIdDisplay();
+        fetchRouteOptions([county, signSys, routeNo, subroute, suppCode], "route-direction", "CO_RouteDirection",
+          function(v) { return v === "00" ? "00 - Undivided" : v; });
+      });
+
+      /* ── Direction change → fetch exit numbers ── */
+      document.getElementById("route-direction").addEventListener("change", function() {
+        var county = document.getElementById("route-county").value;
+        var signSys = document.getElementById("route-signsystem").value;
+        var routeNo = document.getElementById("route-number").value;
+        var subroute = document.getElementById("route-subroute").value;
+        var suppCode = document.getElementById("route-suppcode").value;
+        var direction = this.value;
+        resetRouteDropdowns(6);
+        if (!direction) return;
+        builtRouteId = county + signSys + routeNo + subroute + suppCode + direction;
+        updateRouteIdDisplay();
+        fetchRouteOptions([county, signSys, routeNo, subroute, suppCode, direction],
+          "route-exitnumber", "CO_ExitNumber",
+          function(v) { return v === null ? "N/A" : v; },
+          function(items) {
+            /* If exit number dropdown is disabled (no exits), route is complete */
+            var exitEl = document.getElementById("route-exitnumber");
+            if (exitEl.disabled) {
+              updateRouteIdDisplay();
+            }
+          });
+      });
+
+      /* ── Exit number change → fetch ramp letters ── */
+      document.getElementById("route-exitnumber").addEventListener("change", function() {
+        var county = document.getElementById("route-county").value;
+        var signSys = document.getElementById("route-signsystem").value;
+        var routeNo = document.getElementById("route-number").value;
+        var subroute = document.getElementById("route-subroute").value;
+        var suppCode = document.getElementById("route-suppcode").value;
+        var direction = document.getElementById("route-direction").value;
+        var exitNum = this.value;
+        resetRouteDropdowns(7);
+        var base = county + signSys + routeNo + subroute + suppCode + direction;
+        if (!exitNum || exitNum === "N/A") {
+          builtRouteId = base;
+          updateRouteIdDisplay();
+          return;
+        }
+        builtRouteId = base + exitNum;
+        updateRouteIdDisplay();
+        fetchRouteOptions([county, signSys, routeNo, subroute, suppCode, direction, exitNum],
+          "route-rampletter", "CO_RampLetter");
+      });
+
+      /* ── Ramp letter change → finalize route ID ── */
+      document.getElementById("route-rampletter").addEventListener("change", function() {
+        var county = document.getElementById("route-county").value;
+        var signSys = document.getElementById("route-signsystem").value;
+        var routeNo = document.getElementById("route-number").value;
+        var subroute = document.getElementById("route-subroute").value;
+        var suppCode = document.getElementById("route-suppcode").value;
+        var direction = document.getElementById("route-direction").value;
+        var exitNum = document.getElementById("route-exitnumber").value;
+        var rampLetter = this.value;
+        if (rampLetter) {
+          builtRouteId = county + signSys + routeNo + subroute + suppCode + direction + exitNum + rampLetter;
+        }
+        updateRouteIdDisplay();
+      });
+
+      /* ── Point-to-point routing state ── */
+      var pointMarkers = [];
+      var pointCoords = [];
+      var routeLayer = null;
+      var currentRoutedGeoJson = null;
+
+      function clearRoutePoints() {
+        pointMarkers.forEach(function(m) { map.removeLayer(m); });
+        pointMarkers = [];
+        pointCoords = [];
+        if (routeLayer) { map.removeLayer(routeLayer); routeLayer = null; }
+        currentRoutedGeoJson = null;
+        document.getElementById("points-status").textContent = "Click on the map to set Start point (Point 1).";
+      }
+      document.getElementById("clear-points-btn").addEventListener("click", clearRoutePoints);
+
+      map.on("click", function(event) {
+        if (selectedSource() !== "points") return;
+        var lat = event.latlng.lat;
+        var lng = event.latlng.lng;
+        pointCoords.push([lng, lat]);
+        var ptIndex = pointCoords.length;
+        var label = ptIndex === 1 ? "Start" : (ptIndex === 2 ? "End" : "Waypoint " + (ptIndex - 1));
+        var marker = L.marker([lat, lng]).addTo(map).bindPopup(label).openPopup();
+        pointMarkers.push(marker);
+
+        if (pointCoords.length === 1) {
+          document.getElementById("points-status").textContent = "Start point set. Click map to set End point.";
+        } else {
+          document.getElementById("points-status").textContent = "Calculating roadway route between points (" + pointCoords.length + " points)…";
+          google.script.run
+            .withSuccessHandler(function(result) {
+              currentRoutedGeoJson = result;
+              if (routeLayer) map.removeLayer(routeLayer);
+              routeLayer = L.geoJSON(result, {
+                style: { color: "#0d6efd", weight: 5, opacity: 0.85 }
+              }).addTo(map);
+              map.fitBounds(routeLayer.getBounds(), { padding: [30, 30] });
+              var summaryText = "✓ Routed via WVDOT LRS: Route " + result.routeId +
+                (result.fromMeasure !== undefined ? " (MP " + result.fromMeasure.toFixed(2) + " – " + result.toMeasure.toFixed(2) + ")" : "");
+              document.getElementById("points-status").textContent = summaryText;
+            })
+            .withFailureHandler(function(err) {
+              document.getElementById("points-status").textContent = "Routing failed: " + (err && err.message ? err.message : String(err));
+            })
+            .calculateRouteFromPoints(pointCoords);
+        }
+      });
+
+      /* ── Drawing tools & panel configuration ── */
+      /* Toggle buffer box based on drawn shape type */
+      var bufferGroup = document.getElementById("buffer-distance-group");
+      map.on('draw:drawstart', function(e) {
+        if (e.layerType === 'polygon' || e.layerType === 'rectangle') {
+          /* Hide buffer box when drawing a polygon */
+          bufferGroup.classList.add('hidden');
+          document.getElementById('buffer-distance').removeAttribute('required');
+        } else {
+          /* Show buffer box for linear features */
+          bufferGroup.classList.remove('hidden');
+          document.getElementById('buffer-distance').setAttribute('required', 'true');
+        }
+      });
+      /* Optional handler when drawing is cancelled or completed */
+      map.on('draw:drawstop', function(e) {
+        /* Keeps current visibility state or handles cleanup */
+      });
+      function configureDrawingTools() {
+        if (drawControl) { map.removeControl(drawControl); drawControl = null; }
+        var isLinear = document.getElementById("project-type").value === "Linear";
+        var source = selectedSource();
+        /* Linear projects: allow line, require buffer >= 5m; hide buffer for uploads */
+        var showBuffer = isLinear && source !== "upload";
+        document.getElementById("buffer-distance-group").classList.toggle("hidden", !showBuffer);
+        document.getElementById("buffer-distance").required = showBuffer;
+        document.getElementById("points-choice").classList.toggle("hidden", !isLinear);
+        document.getElementById("route-choice").classList.toggle("hidden", !isLinear);
+
+        if (!isLinear && (source === "route" || source === "points")) {
+          document.querySelector('input[name="boundary-source"][value="draw"]').checked = true;
+          source = "draw";
+          updateSourcePanels();
+        }
+
+        var pointsBar = document.getElementById("points-bar");
+        var mapHint = document.getElementById("map-hint");
+        if (source === "points") {
+          pointsBar.classList.remove("hidden");
+          mapHint.classList.add("hidden");
+        } else {
+          pointsBar.classList.add("hidden");
+          mapHint.classList.remove("hidden");
+          mapHint.textContent = isLinear
+            ? "Draw one or more centerlines. Each line will be buffered by the distance above (minimum 5 m)."
+            : "Draw one or more polygons to define the project area.";
+          drawControl = new L.Control.Draw({
+            position: "topleft",
+            draw: {
+              polygon: { allowIntersection: false, showArea: true },
+              /*polygon: isLinear ? false : { allowIntersection: false, showArea: true }*/
+              polyline: isLinear ? { shapeOptions: { color: "#155d86", weight: 4 } } : false,
+              rectangle: isLinear ? false : true,
+              circle: false,
+              circlemarker: false,
+              marker: false
+            },
+            edit: { featureGroup: drawnItems, edit: true, remove: true }
+          });
+          map.addControl(drawControl);
+        }
+      }
+
+      map.on(L.Draw.Event.CREATED, function(event) {
+        drawnItems.addLayer(event.layer);
+      });
+      document.getElementById("project-type").addEventListener("change", function() {
+        drawnItems.clearLayers();
+        clearRoutePoints();
+        configureDrawingTools();
+      });
+      document.querySelectorAll('input[name="boundary-source"]').forEach(function(input) {
+        input.addEventListener("change", function() {
+          updateSourcePanels();
+          configureDrawingTools();
+        });
+      });
+      function selectedSource() {
+        return document.querySelector('input[name="boundary-source"]:checked').value;
+      }
+      function updateSourcePanels() {
+        var source = selectedSource();
+        var showMap = (source === "draw" || source === "points");
+        document.getElementById("draw-panel").classList.toggle("hidden", !showMap);
+        document.getElementById("upload-panel").classList.toggle("hidden", source !== "upload");
+        document.getElementById("route-panel").classList.toggle("hidden", source !== "route");
+        if (showMap) window.setTimeout(function() { map.invalidateSize(); }, 0);
+      }
+      configureDrawingTools();
+
+      function showStatus(message, kind) {
+        statusBox.textContent = message;
+        statusBox.className = kind || "";
+      }
+
+      /* ── Form submission ── */
+      form.addEventListener("submit", function(event) {
+        event.preventDefault();
+        outputs.textContent = "";
+        if (!form.reportValidity()) return;
+        var source = selectedSource();
+        var isLinear = document.getElementById("project-type").value === "Linear";
+
+        /* Linear buffer validation: must be >= 5 meters */
+        if (isLinear && source !== "upload") {
+          var bufferDist = Number(document.getElementById("buffer-distance").value);
+          if (!isFinite(bufferDist) || bufferDist < 5) {
+            showStatus("Linear projects require a buffer distance of at least 5 meters (defaults to 15).", "error");
+            return;
+          }
+          if (bufferDist > 100000) {
+            showStatus("The linear buffer distance cannot exceed 100,000 meters.", "error");
+            return;
+          }
+        }
+
+        if (source === "route") {
+          var routeId = builtRouteId;
+          var begin = document.getElementById("route-begin").value;
+          var end = document.getElementById("route-end").value;
+          if (!routeId || !document.getElementById("route-direction").value) {
+            showStatus("Complete the route builder through at least the Direction field.", "error");
+            return;
+          }
+          if (begin === "" || end === "") {
+            showStatus("Enter both beginning and ending mile points.", "error");
+            return;
+          }
+          submitBoundary({
+            boundarySource: "route",
+            route: {
+              routeId: padRouteID(13, routeId),
+              beginMeasure: begin,
+              endMeasure: end
+            }
+          });
+          return;
+        }
+
+        if (source === "points") {
+          if (!currentRoutedGeoJson || !currentRoutedGeoJson.features || !currentRoutedGeoJson.features.length) {
+            showStatus("Click on the map to set at least two points (Start and End) to generate a route.", "error");
+            return;
+          }
+          var summaryName = currentRoutedGeoJson.routeId
+            ? "Route " + currentRoutedGeoJson.routeId + " (points).geojson"
+            : "Point-to-point route.geojson";
+          submitBoundary({
+            boundarySource: "route_points",
+            projectGeoJson: currentRoutedGeoJson,
+            fileName: summaryName
+          });
+          return;
+        }
+
+        if (source === "draw") {
+          var drawnGeoJson = drawnItems.toGeoJSON();
+          if (!drawnGeoJson.features.length) {
+            showStatus("Draw at least one boundary on the map.", "error");
+            return;
+          }
+          /* Polygon audit: Non-linear projects require a polygon boundary */
+          if (!isLinear) {
+            var hasNonPolygon = drawnGeoJson.features.some(function(feature) {
+              return !feature.geometry || (feature.geometry.type !== "Polygon" && feature.geometry.type !== "MultiPolygon");
+            });
+            if (hasNonPolygon) {
+              showStatus("Projects that aren't linear (Bridge, Short span, Other) require a drawn polygon boundary.", "error");
+              return;
+            }
+          } else {
+            var hasInvalidLinear = drawnGeoJson.features.some(function(feature) {
+              return !feature.geometry || (feature.geometry.type !== "LineString" &&
+                feature.geometry.type !== "MultiLineString" &&
+                feature.geometry.type !== "Polygon" &&
+                feature.geometry.type !== "MultiPolygon");
+            });
+            if (hasInvalidLinear) {
+              showStatus("Linear projects require a line or polygon boundary.", "error");
+              return;
+            }
+          }
+          submitBoundary({
+            boundarySource: "draw",
+            projectGeoJson: drawnGeoJson,
+            fileName: "Drawn ECZ.geojson"
+          });
+          return;
+        }
+
+        var file = document.getElementById("boundary-file").files[0];
+        if (!file || !/\.kml$|\.kmz$/i.test(file.name)) {
+          showStatus("Choose a KML or KMZ file.", "error");
+          return;
+        }
+        if (file.size > MAX_UPLOAD_BYTES) {
+          showStatus("The selected file exceeds the 10 MiB upload limit.", "error");
+          return;
+        }
+        var reader = new FileReader();
+        reader.onerror = function() {
+          button.disabled = false;
+          showStatus("The browser could not read the selected file.", "error");
+        };
+        reader.onload = function() {
+          var dataUrl = String(reader.result || "");
+          var comma = dataUrl.indexOf(",");
+          if (comma < 0) {
+            button.disabled = false;
+            showStatus("The selected file could not be encoded for upload.", "error");
+            return;
+          }
+          submitBoundary({
+            boundarySource: "upload",
+            fileName: file.name,
+            fileBase64: dataUrl.slice(comma + 1)
+          });
+        };
+        reader.readAsDataURL(file);
+      });
+
+      var currentPreparedData = null;
+      var confirmMap = null;
+      var confirmLayerGroup = null;
+
+      function submitBoundary(boundary) {
+        button.disabled = true;
+        showStatus("Preparing the project boundary and repairing geometry…");
+        var request = {
+          email: document.getElementById("email").value.trim(),
+          projectName: document.getElementById("project-name").value.trim(),
+          projectType: document.getElementById("project-type").value,
+          bufferDistanceMeters: document.getElementById("buffer-distance").value,
+          stateNumber: document.getElementById("state-number").value.trim(),
+          federalNumber: document.getElementById("federal-number").value.trim()
+        };
+        Object.keys(boundary).forEach(function(key) { request[key] = boundary[key]; });
+
+        google.script.run
+          .withSuccessHandler(function(result) {
+            button.disabled = false;
+            currentPreparedData = result;
+
+            document.getElementById("form-page").classList.add("hidden");
+            document.getElementById("confirm-page").classList.remove("hidden");
+            window.scrollTo(0, 0);
+
+            /*document.getElementById("confirm-summary-email").textContent = result.summary.email;
+            document.getElementById("confirm-summary-name").textContent = result.summary.projectName;
+            document.getElementById("confirm-summary-type").textContent = result.summary.projectType;
+            var numText = result.summary.stateNumber;
+            if (result.summary.federalNumber) numText += " / " + result.summary.federalNumber;
+            document.getElementById("confirm-summary-numbers").textContent = numText;
+
+            var sourceDesc = "Drawn boundary";
+            if (boundary.boundarySource === "upload") {
+              sourceDesc = "Uploaded file (" + result.summary.fileName + ")";
+            } else if (boundary.boundarySource === "route") {
+              sourceDesc = "Route ID builder (" + result.summary.fileName + ")";
+            } else if (boundary.boundarySource === "route_points") {
+              sourceDesc = "Drop points & route (" + (result.summary.bufferDistanceMeters ? result.summary.bufferDistanceMeters + "m buffer" : "") + ")";
+            } else if (result.summary.bufferDistanceMeters) {
+              sourceDesc += " (" + result.summary.bufferDistanceMeters + "m buffer)";
+            }
+            document.getElementById("confirm-summary-source").textContent = sourceDesc;
+
+            var proc = result.boundaryProcessing;
+            var procText = (proc && proc.processingSteps && proc.processingSteps.length)
+              ? proc.processingSteps.join(" ")
+              : "Merged and repaired ECZ geometry successfully.";
+            if (proc && proc.warnings && proc.warnings.length) {
+              procText += " Notes: " + proc.warnings.join(" ");
+            }
+            document.getElementById("confirm-summary-processing").textContent = procText;*/
+            /* Populate confirmation summary fields with full context */
+            document.getElementById("confirm-summary-email").textContent = result.summary.email;
+            document.getElementById("confirm-summary-name").textContent = result.summary.projectName;
+            document.getElementById("confirm-summary-type").textContent = result.summary.projectType;
+            var numText = result.summary.stateNumber;
+            if (result.summary.federalNumber) numText += " / " + result.summary.federalNumber;
+            document.getElementById("confirm-summary-numbers").textContent = numText;
+            var sourceDesc = "Drawn boundary";
+            if (boundary.boundarySource === "upload") {
+              sourceDesc = "Uploaded file (" + result.summary.fileName + ")";
+            } else if (boundary.boundarySource === "route") {
+              sourceDesc = "Route ID builder (" + result.summary.fileName + ")";
+            } else if (boundary.boundarySource === "route_points") {
+              sourceDesc = "Drop points & route (" + (result.summary.bufferDistanceMeters ? result.summary.bufferDistanceMeters + "m buffer" : "") + ")";
+            } else if (result.summary.bufferDistanceMeters) {
+              /* Only append buffer text if a buffer was actually applied/used */
+              sourceDesc += " (" + result.summary.bufferDistanceMeters + "m buffer)";
+            }
+            document.getElementById("confirm-summary-source").textContent = sourceDesc;
+            /* Conditionally handle buffer row in the summary table if present */
+            var bufferRow = document.getElementById("confirm-buffer-row");
+            if (bufferRow) {
+              var isPolygonDrawn = (boundary.boundarySource === "draw" && !hasLineGeometry);
+              if (isPolygonDrawn) {
+                bufferRow.style.display = "none";
+              } else {
+                bufferRow.style.display = "";
+                var bufferValEl = document.getElementById("confirm-summary-buffer");
+                if (bufferValEl && result.summary.bufferDistanceMeters) {
+                  bufferValEl.textContent = result.summary.bufferDistanceMeters + " meters";
+                }
+              }
+            }
+            var proc = result.boundaryProcessing;
+            var procText = (proc && proc.processingSteps && proc.processingSteps.length)
+              ? proc.processingSteps.join(" ")
+              : "Merged and repaired ECZ geometry successfully.";
+            if (proc && proc.warnings && proc.warnings.length) {
+              procText += " Notes: " + proc.warnings.join(" ");
+            }
+            document.getElementById("confirm-summary-processing").textContent = procText;
+
+            if (!confirmMap) {
+              confirmMap = L.map("confirm-map").setView([38.6, -80.6], 7);
+              L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+                maxZoom: 19,
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+              }).addTo(confirmMap);
+              confirmLayerGroup = L.featureGroup().addTo(confirmMap);
+            }
+            confirmLayerGroup.clearLayers();
+            var geoLayer = L.geoJSON(result.preparedGeoJson, {
+              style: { color: "#d9381e", weight: 3, fillColor: "#d9381e", fillOpacity: 0.35 }
+            });
+            geoLayer.addTo(confirmLayerGroup);
+            setTimeout(function() {
+              confirmMap.invalidateSize();
+              if (confirmLayerGroup.getLayers().length > 0) {
+                confirmMap.fitBounds(confirmLayerGroup.getBounds(), { padding: [30, 30] });
+              }
+            }, 150);
+          })
+          .withFailureHandler(function(error) {
+            button.disabled = false;
+            showStatus(error && error.message ? error.message : String(error), "error");
+          })
+          .prepareEczForConfirmation(request);
+      }
+
+      document.getElementById("confirm-back-btn").addEventListener("click", function() {
+        document.getElementById("confirm-page").classList.add("hidden");
+        document.getElementById("form-page").classList.remove("hidden");
+        button.disabled = false;
+        window.scrollTo(0, 0);
+      });
+
+      document.getElementById("confirm-submit-btn").addEventListener("click", function() {
+        if (!currentPreparedData) return;
+        var confirmBtn = document.getElementById("confirm-submit-btn");
+        var backBtn = document.getElementById("confirm-back-btn");
+        var statusEl = document.getElementById("confirm-status");
+        confirmBtn.disabled = true;
+        backBtn.disabled = true;
+        statusEl.textContent = "Saving submission to Google Sheets…";
+        statusEl.className = "";
+
+        google.script.run
+          .withSuccessHandler(function(saveResult) {
+            document.getElementById("confirm-page").classList.add("hidden");
+            document.getElementById("success-page").classList.remove("hidden");
+            window.scrollTo(0, 0);
+
+            if (currentPreparedData && currentPreparedData.downloads) {
+              var kmlLink = document.getElementById("download-kml-link");
+              var kmzLink = document.getElementById("download-kmz-link");
+              if (kmlLink && currentPreparedData.downloads.kmlDataUri) {
+                kmlLink.href = currentPreparedData.downloads.kmlDataUri;
+                kmlLink.download = currentPreparedData.downloads.kmlFileName || "Repaired_ECZ.kml";
+              }
+              if (kmzLink) {
+                kmzLink.href = currentPreparedData.downloads.kmzDataUri || currentPreparedData.downloads.kmlDataUri;
+                kmzLink.download = currentPreparedData.downloads.kmzFileName || "Repaired_ECZ.kmz";
+              }
+            }
+
+            var formUrl = (saveResult && saveResult.formUrl) || window.location.href;
+            var submitAnotherLink = document.getElementById("submit-another-link");
+            if (submitAnotherLink && formUrl) {
+              submitAnotherLink.href = formUrl;
+            }
+          })
+          .withFailureHandler(function(error) {
+            confirmBtn.disabled = false;
+            backBtn.disabled = false;
+            statusEl.textContent = error && error.message ? error.message : String(error);
+            statusEl.className = "error";
+          })
+          .confirmEczSubmission({
+            summary: currentPreparedData.summary,
+            preparedGeoJson: currentPreparedData.preparedGeoJson
+          });
+      });
+
+      var submitAnotherLink = document.getElementById("submit-another-link");
+      if (submitAnotherLink) {
+        submitAnotherLink.addEventListener("click", function(e) {
+          if (this.href && this.href !== "#" && !this.href.endsWith("#")) {
+            return;
+          }
+          e.preventDefault();
+          window.location.reload();
+        });
+      }
+      if (window.google && google.script && google.script.url && google.script.url.getLocation) {
+        google.script.url.getLocation(function(loc) {
+          if (loc && loc.url) {
+            var link = document.getElementById("submit-another-link");
+            if (link) link.href = loc.url;
+          }
+        });
+      } else if (window.location && window.location.href) {
+        var link = document.getElementById("submit-another-link");
+        if (link) link.href = window.location.href;
+      }
+
+      function populateEmailDropdown(emails) {
+        var emailSelect = document.getElementById("email");
+        if (!emailSelect || !Array.isArray(emails) || !emails.length) return;
+        var currentVal = emailSelect.value;
+        emailSelect.innerHTML = '<option value="">Select your email address</option>';
+        emails.forEach(function(email) {
+          var opt = document.createElement("option");
+          opt.value = email;
+          opt.textContent = email;
+          emailSelect.appendChild(opt);
+        });
+        if (currentVal) emailSelect.value = currentVal;
+      }
+
+      if (window.google && google.script && google.script.run && google.script.run.getAuthorizedEmails) {
+        var emailSelect = document.getElementById("email");
+        if (emailSelect && emailSelect.options.length <= 1) {
+          google.script.run
+            .withSuccessHandler(populateEmailDropdown)
+            .getAuthorizedEmails();
+        }
+      }
+    </script>
+  </body>
+</html>

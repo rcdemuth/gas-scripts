@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <style>
+      body { font-family: Arial, sans-serif; padding: 20px; max-width: 400px; }
+      .file-input { margin-bottom: 20px; }
+      button { padding: 10px 15px; cursor: pointer; width: 100%; }
+    </style>
+  </head>
+  <body>
+    <h2>Merge Multiple PDFs & Image</h2>
+    
+    <div class="file-input">
+      <label><strong>1. Select PDFs:</strong> (Hold Ctrl/Cmd to select multiple)</label><br>
+      <!-- The 'multiple' attribute allows selecting more than one file -->
+      <input type="file" id="pdf-files" accept="application/pdf" multiple>
+    </div>
+    
+    <div class="file-input">
+      <label><strong>2. Select Image:</strong> (Optional)</label><br>
+      <input type="file" id="image-file" accept="image/jpeg, image/png">
+    </div>
+    
+    <button id="merge-btn" onclick="processFiles()">Merge Files</button>
+    <p id="output-message"></p>
+
+    <script>
+      // Helper function to read a file as Base64 asynchronously
+      function readFileAsBase64(file) {
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = e => resolve(e.target.result.split(',')[1]);
+          reader.onerror = e => reject(e);
+          reader.readAsDataURL(file);
+        });
+      }
+
+      async function processFiles() {
+        const pdfFiles = document.getElementById('pdf-files').files;
+        const imageFile = document.getElementById('image-file').files[0];
+        
+        if (pdfFiles.length === 0) {
+          alert("Please select at least one PDF.");
+          return;
+        }
+        
+        document.getElementById('output-message').innerText = "Reading files...";
+        document.getElementById('merge-btn').disabled = true;
+        
+        try {
+          // 1. Process all selected PDFs into an array of Base64 strings
+          const pdfBase64Array = [];
+          for (let i = 0; i < pdfFiles.length; i++) {
+            const b64 = await readFileAsBase64(pdfFiles[i]);
+            pdfBase64Array.push(b64);
+          }
+          
+          // 2. Process the image if one was selected
+          let imageB64 = null;
+          let imgType = null;
+          if (imageFile) {
+            imageB64 = await readFileAsBase64(imageFile);
+            imgType = imageFile.type;
+          }
+          
+          document.getElementById('output-message').innerText = "Merging... Please wait.";
+          
+          // 3. Send to Apps Script backend
+          google.script.run
+            .withSuccessHandler(url => {
+              document.getElementById('output-message').innerHTML = `Success! <a href="${url}" target="_blank">View Merged PDF</a>`;
+              document.getElementById('merge-btn').disabled = false;
+            })
+            .withFailureHandler(error => {
+              document.getElementById('output-message').innerText = "Error: " + error.message;
+              document.getElementById('merge-btn').disabled = false;
+            })
+            .mergeUploadedFiles(pdfBase64Array, imageB64, imgType);
+            
+        } catch (error) {
+          document.getElementById('output-message').innerText = "Error reading files from your computer.";
+          document.getElementById('merge-btn').disabled = false;
+        }
+      }
+    </script>
+  </body>
+</html>

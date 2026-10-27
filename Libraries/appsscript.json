@@ -1,0 +1,69 @@
+{
+  "timeZone": "America/New_York",
+  "dependencies": {
+    "libraries": [
+      {
+        "userSymbol": "underscoreGS",
+        "version": "1",
+        "libraryId": "1mBlMu5QzQSO0X3pGZHPBPfLYh5UuSRLETBb9x-EIyOzMPrd0SA-i7QdR"
+      },
+      {
+        "userSymbol": "Underscore",
+        "version": "4",
+        "libraryId": "1PcEHcGVC1njZd8SfXtmgQk19djwVd2GrrW1gd7U5hNk033tzi6IUvIAV"
+      },
+      {
+        "userSymbol": "MoveFolder",
+        "version": "4",
+        "libraryId": "1UEyIfxDTat6GYRFy5iJ3UGj2QpyVuuQI5i-BsOcHDMr8HadIWailwj4k"
+      },
+      {
+        "userSymbol": "MicrosoftDocsApp",
+        "version": "1",
+        "libraryId": "1B0eoHz03BVtSZhJAocaGNq94RjoXocz8xGMaLzwVdmAvYW5k8s5Yd360"
+      },
+      {
+        "userSymbol": "PDFApp",
+        "version": "8",
+        "libraryId": "1Xmtr5XXEakVql7N6FqwdCNdpdijsJOxgqH173JSB0UOwdb0GJYJbnJLk"
+      },
+      {
+        "userSymbol": "TemplateApp",
+        "version": "1",
+        "libraryId": "1DbOiAxK9Kwndl-5848xLP91xhUzTidfXkBOxBpWG2uw8fxdvf0Vt3sk4"
+      },
+      {
+        "userSymbol": "TriggerApp",
+        "version": "8",
+        "libraryId": "1LihDPPHWBCcadYVBI3oZ4vOt7XqlowoHyBLdaDgRIx_5OpRBREA7Z1QB"
+      },
+      {
+        "userSymbol": "UtlApp",
+        "version": "14",
+        "libraryId": "1idMI9-WtPMbYvbK5D7KH2_GWh62Dny9RG8NzjwjHI5whGIAPXEtTJmeC"
+      },
+      {
+        "userSymbol": "HtmlFormApp",
+        "version": "3",
+        "libraryId": "1uLJrVXGaI-ceHFl_VC1U5jcynKpR2qnNG2tNPd03QJZw1jCcKw2_Oiwh"
+      },
+      {
+        "userSymbol": "DownloadLargeFilesByUrl",
+        "version": "4",
+        "libraryId": "1PTlzn6VNux5MlnkT5zsb4T-UDLINCLFvK5Uvb0M4gstAt3P9eBHWxMCu"
+      },
+      {
+        "userSymbol": "FilesApp",
+        "version": "7",
+        "libraryId": "1dBxqh6gpWqFv4h0M25ALp4bhcs6CoqhiIJ0fUeUjR57bAxIN2PqfkQns"
+      },
+      {
+        "userSymbol": "GmailUtils",
+        "version": "4",
+        "libraryId": "1V9HLEXHv4-7muXGhMS0XC-Lon5WX1CQhtfmjmaVp7WSHoeswwfkq1-90"
+      }
+    ]
+  },
+  "exceptionLogging": "STACKDRIVER",
+  "runtimeVersion": "V8"
+}

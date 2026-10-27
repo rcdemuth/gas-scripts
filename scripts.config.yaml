@@ -1,0 +1,112 @@
+version: "1.0"
+settings:
+  projects_dir: "gas_scripts"
+
+scripts:
+  - name: "Time-Sheets"
+    id: "1DojAzaizN7a4l3a9hFlPLDNrzXxrHmX1GdGL7hg8XAlAAHkak8e2_v5Q"
+    enabled: true
+
+  - name: "PDF_Interface_Testing"
+    id: "1lqiAw2ow8VoGSnSduwyJeIa0s-Fx_k-R3q_-wbLqDKKYiDLIaZr1gpL3"
+    enabled: true
+
+  - name: "Monitor-Gmail-for-Screening-Sheets"
+    id: "16KyBASI-bCq_1ZXdVogRrhP7YPaxwngpQKlj8SAHVdA4GxM79ZuqGGGr"
+    enabled: true
+
+  - name: "NEPA_Screening_Frontend"
+    id: "1BATA0jQYmD5ke2G-OTsVlnQjz8jTlk7x1AdWGydFxIwB78oFwPh_1myZ"
+    enabled: true
+
+  - name: "Test_Nepa_Screening"
+    id: "1gIs7LzAe5Ni-7i5i1Ng6R_WvI-alodZBanf6542-FsorCLLg-KEenofj"
+    enabled: true
+
+  - name: "testing_javascript_queries"
+    id: "1T-rdY76Q9hdg3Po54uK-DUmCjBOuXySZQK2eUeDZRSS5xZFsy6YcJwoh"
+    enabled: true
+
+  - name: "LWCF_GIS_Sync"
+    id: "1ZbV119zNcoOUJaJvyhfQbj_hK-JqcVrx2TdRCuMBWX_uXSM_7cdhh_Tb"
+    enabled: true
+
+  - name: "REMaps2"
+    id: "1i1EdVcmT90evhppnNhhm1ay16Ji6PsPM6MSV1eyri92TtcWHuioNvZQT"
+    enabled: true
+
+  - name: "REMaps"
+    id: "1guYDHDNpYd0qfyBn7eON_tJSEuy2bYFzgWSnAXMo-uadGFUmiNPyZhvi"
+    enabled: true
+
+  - name: "GIS_Analysis_Turf"
+    id: "1RPFom8LRjT32VgU_QZeTiw2ic7mYTWMce05J2NcWTFwvndG7dd8BaSG3"
+    enabled: true
+
+  - name: "Screening-Sheet-Extracts"
+    id: "1iw0dqjJLjBuREdaSqjU27GVz1AWJ8iUL1FFYw7nohx1h44mn0C8vuvYm"
+    enabled: true
+
+  - name: "PDF-Extracts"
+    id: "1PYwLGhRgYwZqGxTcHxv8JFfCsNG7lvkELoq8_B7verx8k220rulDdsFE"
+    enabled: true
+
+  - name: "gmailAutoarchive"
+    id: "1FLu-vAaQVP5IrkiHQLjZ3g5KDctnJeNIxcUXVIuclwm98obbXKWKoyCa"
+    enabled: true
+
+  - name: "Monitor-RE_Template-Updates"
+    id: "16AAidEjv_cwDeMSrDpXjcR6K3vqH2aR1paKW2wT2n6QdJteboCFCWVUI"
+    enabled: true
+
+  - name: "Bridge_Descriptions"
+    id: "13W5RWA7WT5OH-SjA-fAASOnrjDG2lnXQw65QGCFAGB4vZphPSxVt5Sbs"
+    enabled: true
+
+  - name: "PDF-and-Image-Merger"
+    id: "1l6XvqmpPO27FvORPLZ8qFTVrGn4r6nXxw9L0fPsyR_Y6cfjL9xXX-hX9"
+    enabled: true
+
+  - name: "Libraries"
+    id: "1772005reldct32nWRT_ek4PSZ-dkr8gA5tkgdH8Xk_Zmq45w075eMqYf"
+    enabled: true
+
+  - name: "NEPA_Automation"
+    id: "1t5Hk-k2A9o-YR__BzdcN2ZeckUxOnIEt-38VUXGtcWNuJAa0ppSwgKzG"
+    enabled: true
+
+  - name: "Project_Tracking_RCD"
+    id: "1ThAgfTk8UtdliUvIb7gMulCJaNwcOBB2Iye_xmG58GhM1zUVPmlA-iSO"
+    enabled: true
+
+  - name: "DriveIDsSheet"
+    id: "1-AjpVVJzsIPiB1K2JmWSqAMhwF7zgpUYpv1XekOL5V6xESKE4uoi51Ip"
+    enabled: true
+
+  - name: "Sync_Spanbase_Data"
+    id: "1KJ9cj7Ac3S8EQe5UFFoDdtUGs_-hfXbYD6Zk3fYZJpHHIa-a2fTJBnex"
+    enabled: true
+
+  - name: "Main_Sheets_Referenced_PDFs_Merge"
+    id: "1INZNl2HkPrm9a0o3CBFIJQaKXs12poG8LuXQxgDEO1wL6Xio2T9LAAEJ"
+    enabled: true
+
+  - name: "BackUpArchTracking"
+    id: "1Popzm6CoOH0eXkaCfiiWhptJMqAaPRahBAwIcrcBVCC_jDjk2-DZL0t3"
+    enabled: true
+
+  - name: "utm_starred"
+    id: "1kN30gmZ-tKudbAxnIt4t2a_liU4LDigRIgIA-J1W4j-9DyWVq26kO-eR"
+    enabled: true
+
+  - name: "locked_utm"
+    id: "17Y7qTJwq1wRAGkfHILkY0P_MR_Gf9x0_l0EVqorb7g_Liww4QEyDh1s1"
+    enabled: true
+
+  - name: "unlocked_utm"
+    id: "19pVlj5lv5TEFBFzmL9tgukKZqGMTNFI59X8ay2jEIhGoZYU9YsxKKzFM"
+    enabled: true
+
+  - name: "Aggregate_Document_Content"
+    id: "19iy_1ZtKfn19qHRzIpcyFURncG5AwvY25HBzCPA76cLto_NnjhjAWOm4"
+    enabled: true

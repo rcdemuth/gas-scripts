@@ -1,0 +1,89 @@
+name: Deploy Modified Apps Script Projects
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'gas_scripts/**'
+  workflow_dispatch:
+    inputs:
+      target_project:
+        description: 'Specific project to push (leave empty to push all modified)'
+        required: false
+        default: ''
+
+jobs:
+  deploy:
+    name: Deploy Changed Scripts
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2 # Fetch previous commit for git diff
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Clasp globally
+        run: npm install -g @google/clasp
+
+      - name: Restore Clasp Authentication
+        env:
+          CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+        run: |
+          mkdir -p ~/.clasprc
+          echo "$CLASPRC_JSON" > ~/.clasprc.json
+          chmod 600 ~/.clasprc.json
+
+      - name: Detect Changed Projects and Push
+        run: |
+          TARGET="${{ github.event.inputs.target_project }}"
+
+          # If manually triggered with a specific project name
+          if [ -n "$TARGET" ]; then
+            PROJECT_DIR="gas_scripts/$TARGET"
+            if [ -d "$PROJECT_DIR" ] && [ -f "$PROJECT_DIR/.clasp.json" ]; then
+              echo "Manual trigger for targeted project: $PROJECT_DIR"
+              cd "$PROJECT_DIR"
+              clasp push --force
+              exit 0
+            else
+              echo "Error: Directory or .clasp.json not found for $PROJECT_DIR"
+              exit 1
+            fi
+          fi
+
+          # If triggered by a git push or manual run without a specific project
+          echo "Comparing HEAD~1 against HEAD..."
+          CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD -- gas_scripts/)
+
+          if [ -z "$CHANGED_FILES" ]; then
+            echo "No changes detected inside gas_scripts/."
+            exit 0
+          fi
+
+          # Extract unique project directory paths (gas_scripts/<project-name>)
+          PROJECT_DIRS=$(echo "$CHANGED_FILES" | awk -F/ '{print $1"/"$2}' | sort -u)
+
+          echo "Detected changes in the following projects:"
+          echo "$PROJECT_DIRS"
+          echo "----------------------------------------"
+
+          for DIR in $PROJECT_DIRS; do
+            if [ -d "$DIR" ] && [ -f "$DIR/.clasp.json" ]; then
+              echo "Pushing project: $DIR"
+              (
+                cd "$DIR"
+                clasp push --force
+              )
+              echo "Successfully pushed $DIR"
+              echo "----------------------------------------"
+            else
+              echo "Skipping $DIR: directory or .clasp.json not found."
+            fi
+          done
