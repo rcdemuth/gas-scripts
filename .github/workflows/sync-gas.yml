@@ -17,7 +17,7 @@ jobs:
         with:
           fetch-depth: 0
           submodules: recursive
-          token: ${{ secrets.GH_PAT_FOR_SUBMODULES || github.token }}
+          token: ${{ secrets.GH_PAT_FOR_SUBMODULES }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
